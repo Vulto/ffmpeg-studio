@@ -1,0 +1,108 @@
+@import "tailwindcss";
+@import "@xyflow/react/dist/style.css";
+
+@theme {
+  --color-surface-base: var(--surface-base);
+  --color-surface-inset: var(--surface-inset);
+  --color-surface-l1: var(--surface-l1);
+  --color-surface-l2: var(--surface-l2);
+  --color-fg-primary: var(--fg-primary);
+  --color-fg-secondary: var(--fg-secondary);
+  --color-border-l1: var(--border-l1);
+  --color-button-ghost-hover: var(--button-ghost-hover);
+  --color-button-ghost-active: var(--button-ghost-active);
+  --color-canvas-bg: var(--canvas-bg);
+  --color-node-bg: var(--node-bg);
+  --color-accent: var(--accent);
+  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+:root {
+  color-scheme: dark;
+  --surface-base: #0a0a0a;
+  --surface-inset: #111213;
+  --surface-l1: #1a1a1a;
+  --surface-l2: #222222;
+  --accent: #60a5fa;
+  --fg-primary: #f8f8f8;
+  --fg-secondary: #ababab;
+  --border-l1: #262626;
+  --button-ghost-hover: #1e1e1e;
+  --button-ghost-active: #2b2b2b;
+  --canvas-bg: #141414;
+  --node-bg: #1e1e1e;
+  --sidebar-width-icon: 3.5rem;
+  --panel-width: 24rem;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+  --surface-base: #f5f5f5;
+  --surface-inset: #ffffff;
+  --surface-l1: #fafafa;
+  --surface-l2: #f0f0f0;
+  --accent: #2563eb;
+  --fg-primary: #171717;
+  --fg-secondary: #737373;
+  --border-l1: #e5e5e5;
+  --button-ghost-hover: #ebebeb;
+  --button-ghost-active: #e0e0e0;
+  --canvas-bg: #ebebeb;
+  --node-bg: #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--surface-base);
+  color: var(--fg-primary);
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.1px;
+}
+
+.react-flow.rf-dark {
+  --xy-background-color-default: var(--canvas-bg);
+  --xy-background-pattern-dots-color-default: #777;
+  --xy-node-background-color-default: var(--node-bg);
+  --xy-node-border-default: 1px solid #3c3c3c;
+  --xy-minimap-background-color-default: #141414;
+  --xy-minimap-mask-background-color-default: #3c3c3c99;
+  --xy-minimap-node-background-color-default: #2b2b2b;
+  --xy-controls-button-background-color-default: #2b2b2b;
+  --xy-controls-button-background-color-hover-default: #3e3e3e;
+  --xy-controls-button-color-default: #f8f8f8;
+  --xy-controls-button-border-color-default: #5b5b5b;
+}
+
+.react-flow.rf-light {
+  --xy-background-color-default: var(--canvas-bg);
+  --xy-background-pattern-dots-color-default: #bbb;
+  --xy-node-background-color-default: var(--node-bg);
+  --xy-node-border-default: 1px solid #d4d4d4;
+  --xy-minimap-background-color-default: #f5f5f5;
+  --xy-minimap-mask-background-color-default: #a3a3a399;
+  --xy-minimap-node-background-color-default: #d4d4d4;
+  --xy-controls-button-background-color-default: #ffffff;
+  --xy-controls-button-background-color-hover-default: #f0f0f0;
+  --xy-controls-button-color-default: #171717;
+  --xy-controls-button-border-color-default: #d4d4d4;
+}
+
+.xterm {
+  padding: 0;
+}
+
+.xterm .xterm-viewport {
+  background-color: transparent !important;
+}
