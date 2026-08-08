@@ -12,6 +12,14 @@ import {
 
 export type PresetId = 'upscale' | 'slideshow' | 'extract-frames'
 
+export type ExtractFrameMode = 'all' | 'unique' | 'fps'
+
+export type PresetOptions = {
+  mode?: ExtractFrameMode
+  /** Only used when mode is `fps`. Ignored for `all` and `unique`. */
+  fps?: number
+}
+
 export type PresetOutput = {
   relativePath: string
   fileName: string
@@ -27,8 +35,78 @@ export type PresetEvent = {
 const REALESRGAN_BIN = process.env.REALESRGAN_BIN ?? 'realesrgan-ncnn-vulkan'
 const REALESRGAN_SCALE = Number(process.env.REALESRGAN_SCALE ?? 4)
 const REALESRGAN_TILE_OVERRIDE = Number(process.env.REALESRGAN_TILE ?? 0)
-const MAX_FRAMES = 30
+/** Soft cap for canvas/SSE when sampling by fps. */
+const MAX_FRAMES_FPS = 100
+/** Soft cap for canvas/SSE for unique frames. */
+const MAX_FRAMES_UNIQUE = 500
+/**
+ * Soft cap for canvas/SSE when extracting every frame.
+ * All frames are still written to disk; only canvas/SSE are capped.
+ */
+const MAX_FRAMES_ALL = 2000
+const MAX_FPS = 60
 const VULKAN_FAIL_MARKER = 'vkQueueSubmit failed'
+
+export function normalizeExtractOptions(options?: PresetOptions): {
+  mode: ExtractFrameMode
+  fps: number
+} {
+  const raw = options?.mode
+  const mode: ExtractFrameMode =
+    raw === 'all' || raw === 'unique' || raw === 'fps' ? raw : 'fps'
+
+  // fps only applies to sample-rate mode — never bleed into all/unique.
+  let fps = 1
+  if (mode === 'fps') {
+    fps = Number(options?.fps ?? 1)
+    if (!Number.isFinite(fps) || fps <= 0) fps = 1
+    if (fps > MAX_FPS) fps = MAX_FPS
+  }
+
+  return { mode, fps }
+}
+
+function buildExtractFrameArgs(
+  input: string,
+  outPattern: string,
+  mode: ExtractFrameMode,
+  fps: number,
+): string[] {
+  if (mode === 'all') {
+    // Every decoded frame — no fps= filter. passthrough avoids dropping frames.
+    return [
+      '-i',
+      input,
+      '-fps_mode',
+      'passthrough',
+      '-y',
+      outPattern,
+    ]
+  }
+
+  if (mode === 'unique') {
+    // Drop near-duplicate frames, keep timestamps valid for image sequence.
+    return [
+      '-i',
+      input,
+      '-vf',
+      'mpdecimate,setpts=N/FRAME_RATE/TB',
+      '-fps_mode',
+      'vfr',
+      '-y',
+      outPattern,
+    ]
+  }
+
+  // Sample rate — independent of all/unique.
+  return ['-i', input, '-vf', `fps=${fps}`, '-y', outPattern]
+}
+
+function canvasLimitForMode(mode: ExtractFrameMode): number {
+  if (mode === 'all') return MAX_FRAMES_ALL
+  if (mode === 'unique') return MAX_FRAMES_UNIQUE
+  return MAX_FRAMES_FPS
+}
 
 function toWorkspaceRelative(workspace: string, inputPath: string): string {
   const absWorkspace = resolve(workspace)
@@ -66,7 +144,8 @@ function escapeConcatPath(absPath: string): string {
 async function collectFrameOutputs(
   workspace: string,
   pattern: string,
-): Promise<PresetOutput[]> {
+  limit: number,
+): Promise<{ frames: PresetOutput[]; total: number }> {
   const outputsDir = join(workspace, 'outputs')
   const prefix = pattern.replace(/_%04d\.png$/, '').replace(/^outputs\//, '')
   const entries = await readdir(outputsDir).catch(() => [] as string[])
@@ -85,7 +164,8 @@ async function collectFrameOutputs(
     })
   }
 
-  return results.sort((a, b) => a.fileName.localeCompare(b.fileName)).slice(0, MAX_FRAMES)
+  const sorted = results.sort((a, b) => a.fileName.localeCompare(b.fileName))
+  return { frames: sorted.slice(0, limit), total: sorted.length }
 }
 
 type ProcessResult = {
@@ -232,6 +312,7 @@ export async function runPreset(
   inputPaths: string[],
   workspace: string,
   onEvent: (event: PresetEvent) => void,
+  options?: PresetOptions,
 ): Promise<{ exitCode: number; outputs: PresetOutput[] }> {
   const jobId = randomUUID().slice(0, 8)
   const outputs: PresetOutput[] = []
@@ -320,24 +401,45 @@ export async function runPreset(
     const input = inputPaths[0]
     if (!input) throw new Error('Extract frames requires one video input')
 
+    const { mode, fps } = normalizeExtractOptions(options)
     const outPattern = `outputs/frames_${jobId}_%04d.png`
-    const args = ['-i', input, '-vf', 'fps=1', '-y', outPattern]
+    const canvasLimit = canvasLimitForMode(mode)
+    const args = buildExtractFrameArgs(input, outPattern, mode, fps)
 
-    onEvent({ type: 'meta', data: `$ preset extract-frames (max ${MAX_FRAMES})` })
+    const modeLabel =
+      mode === 'all'
+        ? 'all frames'
+        : mode === 'unique'
+          ? 'unique frames'
+          : `fps=${fps}`
+
+    onEvent({
+      type: 'meta',
+      data: `$ preset extract-frames (${modeLabel}; canvas max ${canvasLimit})`,
+    })
     onEvent({ type: 'meta', data: `ffmpeg ${args.join(' ')}` })
 
     const { exitCode: exit } = await runProcess('ffmpeg', args, workspace, onEvent)
 
     if (exit === 0) {
-      const frames = await collectFrameOutputs(workspace, outPattern)
+      const { frames, total } = await collectFrameOutputs(
+        workspace,
+        outPattern,
+        canvasLimit,
+      )
       for (const frame of frames) {
         outputs.push(frame)
         onEvent({ type: 'output', data: JSON.stringify(frame) })
       }
-      if (frames.length >= MAX_FRAMES) {
+      if (total > frames.length) {
         onEvent({
           type: 'meta',
-          data: `capped at ${MAX_FRAMES} frames`,
+          data: `wrote ${total} frames to disk (${modeLabel}); showing first ${frames.length} on canvas (rest in outputs/)`,
+        })
+      } else {
+        onEvent({
+          type: 'meta',
+          data: `extracted ${total} frame(s) (${modeLabel})`,
         })
       }
     }

@@ -64,7 +64,7 @@ export function canRunPreset(presetId: PresetId, nodes: MediaFlowNode[]): boolea
   const selected = nodes.filter((n) => n.selected && nodeHasPath(n))
 
   if (presetId === 'upscale') {
-    return selected.length === 1 && selected[0]!.data.kind === 'image'
+    return selected.some((n) => n.data.kind === 'image')
   }
 
   if (presetId === 'slideshow') {
@@ -73,7 +73,7 @@ export function canRunPreset(presetId: PresetId, nodes: MediaFlowNode[]): boolea
   }
 
   if (presetId === 'extract-frames') {
-    return selected.length === 1 && selected[0]!.data.kind === 'video'
+    return selected.some((n) => n.data.kind === 'video')
   }
 
   return false
@@ -82,9 +82,18 @@ export function canRunPreset(presetId: PresetId, nodes: MediaFlowNode[]): boolea
 export function getPresetInputPaths(presetId: PresetId, nodes: MediaFlowNode[]): string[] {
   const selected = nodes.filter((n) => n.selected && nodeHasPath(n))
 
-  if (presetId === 'upscale' || presetId === 'extract-frames') {
-    const node = selected[0]
-    return node ? [getNodePath(node)] : []
+  if (presetId === 'upscale') {
+    return selected
+      .filter((n) => n.data.kind === 'image')
+      .sort((a, b) => a.position.x - b.position.x)
+      .map(getNodePath)
+  }
+
+  if (presetId === 'extract-frames') {
+    return selected
+      .filter((n) => n.data.kind === 'video')
+      .sort((a, b) => a.position.x - b.position.x)
+      .map(getNodePath)
   }
 
   if (presetId === 'slideshow') {

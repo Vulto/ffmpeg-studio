@@ -5,9 +5,19 @@ export type UploadResponse = {
   fileName: string
   path: string
   mimeType: string
+  duration?: number
+  frameRate?: number
 }
 
 export type PresetId = 'upscale' | 'slideshow' | 'extract-frames'
+
+export type ExtractFrameMode = 'all' | 'unique' | 'fps'
+
+export type PresetOptions = {
+  mode?: ExtractFrameMode
+  /** Only used when mode is `fps`. Ignored for `all` and `unique`. */
+  fps?: number
+}
 
 export type HealthResponse = {
   ok: boolean
@@ -31,6 +41,7 @@ export type WorkspaceMediaInfo = {
   naturalWidth: number
   naturalHeight: number
   duration?: number
+  frameRate?: number
   url: string
 }
 
@@ -53,21 +64,68 @@ export async function checkHealth(): Promise<HealthResponse> {
   return res.json() as Promise<HealthResponse>
 }
 
-export async function uploadFile(file: File): Promise<UploadResponse> {
-  const form = new FormData()
-  form.append('file', file)
+/** 8 MiB chunks stay well under Bun's per-request buffering limits. */
+const UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024
 
-  const res = await fetch(`${API_BASE}/upload`, {
+async function readUploadError(res: Response): Promise<string> {
+  const err = (await res.json().catch(() => ({}))) as { error?: string }
+  if (err.error) return err.error
+  if (res.status === 413) return 'Upload failed (413): file too large for server limit'
+  return `Upload failed (${res.status})`
+}
+
+/**
+ * Upload a file in small chunks. Single-shot / multipart bodies are buffered
+ * by Bun and fail (or OOM) for large videos; chunked writes stay memory-safe.
+ */
+export async function uploadFile(
+  file: File,
+  onProgress?: (ratio: number) => void,
+): Promise<UploadResponse> {
+  const initRes = await fetch(`${API_BASE}/upload/init`, {
     method: 'POST',
-    body: form,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      fileName: file.name,
+      mimeType: file.type || undefined,
+      size: file.size,
+    }),
   })
+  if (!initRes.ok) throw new Error(await readUploadError(initRes))
 
-  if (!res.ok) {
-    const err = (await res.json().catch(() => ({}))) as { error?: string }
-    throw new Error(err.error ?? 'Upload failed')
+  const { id } = (await initRes.json()) as { id: string }
+  if (!id) throw new Error('Upload init returned no id')
+
+  const total = Math.max(file.size, 1)
+  onProgress?.(0)
+
+  let offset = 0
+  while (offset < file.size) {
+    const end = Math.min(offset + UPLOAD_CHUNK_SIZE, file.size)
+    const chunk = file.slice(offset, end)
+    const chunkRes = await fetch(
+      `${API_BASE}/upload/chunk?id=${encodeURIComponent(id)}&offset=${offset}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: chunk,
+      },
+    )
+    if (!chunkRes.ok) throw new Error(await readUploadError(chunkRes))
+    offset = end
+    onProgress?.(Math.min(1, offset / total))
   }
 
-  return res.json() as Promise<UploadResponse>
+  // Empty file edge case: init created the file; complete still finalizes.
+  const completeRes = await fetch(`${API_BASE}/upload/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  })
+  if (!completeRes.ok) throw new Error(await readUploadError(completeRes))
+
+  onProgress?.(1)
+  return completeRes.json() as Promise<UploadResponse>
 }
 
 export async function fetchWorkspaceMediaInfo(
@@ -136,11 +194,16 @@ export async function runPreset(
   inputPaths: string[],
   onEvent: (event: StreamEvent) => void,
   signal?: AbortSignal,
+  options?: PresetOptions,
 ): Promise<{ exitCode: number; outputs: OutputFileInfo[] }> {
   const res = await fetch(`${API_BASE}/preset/run`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ preset: presetId, inputPaths }),
+    body: JSON.stringify({
+      preset: presetId,
+      inputPaths,
+      ...(options ? { options } : {}),
+    }),
     signal,
   })
 

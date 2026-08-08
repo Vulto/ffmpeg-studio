@@ -2,24 +2,30 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background,
   BackgroundVariant,
-  Controls,
   MiniMap,
   ReactFlow,
   ReactFlowProvider,
+  SelectionMode,
   applyNodeChanges,
   useReactFlow,
   type NodeChange,
   type NodeMouseHandler,
   type NodeTypes,
 } from '@xyflow/react'
-import { Upload } from 'lucide-react'
 import { useMediaImport } from '../hooks/useMediaImport'
 import { canvasThemes } from '../lib/canvasThemes'
 import { useMediaStore } from '../store/mediaStore'
 import { useThemeStore } from '../store/themeStore'
 import { useTerminalStore } from '../store/terminalStore'
 import { BottomToolbar } from './BottomToolbar'
+import {
+  CanvasContextMenu,
+  type ContextMenuPosition,
+} from './CanvasContextMenu'
 import { EmptyCanvas } from './EmptyCanvas'
+import { ImportNotice } from './ImportNotice'
+import { SelectionContextMenu } from './SelectionContextMenu'
+import { SettingsMenu } from './SettingsMenu'
 import { ImageNode } from './nodes/ImageNode'
 import { VideoNode } from './nodes/VideoNode'
 
@@ -28,14 +34,14 @@ const nodeTypes = {
   video: VideoNode,
 } satisfies NodeTypes
 
-type MediaCanvasProps = {
-  onImportReady: (openImport: () => void) => void
-}
+type ContextMenuState =
+  | ({ type: 'canvas' } & ContextMenuPosition)
+  | ({ type: 'selection' } & ContextMenuPosition)
 
-export function MediaCanvas({ onImportReady }: MediaCanvasProps) {
+export function MediaCanvas() {
   return (
     <ReactFlowProvider>
-      <MediaCanvasInner onImportReady={onImportReady} />
+      <MediaCanvasInner />
     </ReactFlowProvider>
   )
 }
@@ -68,19 +74,18 @@ function CanvasViewHelper() {
   return null
 }
 
-function MediaCanvasInner({ onImportReady }: MediaCanvasProps) {
+function MediaCanvasInner() {
   const reactFlowWrapper = useRef<HTMLDivElement>(null)
   const nodes = useMediaStore((s) => s.nodes)
-  const activeTool = useMediaStore((s) => s.activeTool)
   const addFilesAt = useMediaStore((s) => s.addFilesAt)
   const removeNode = useMediaStore((s) => s.removeNode)
-  const onNodesChange = useMediaStore((s) => s.onNodesChange)
   const getReferenceIndex = useMediaStore((s) => s.getReferenceIndex)
   const toggleReference = useTerminalStore((s) => s.toggleReference)
   const theme = useThemeStore((s) => s.theme)
   const canvasTheme = canvasThemes[theme]
   const { screenToFlowPosition } = useReactFlow()
   const [isDragging, setIsDragging] = useState(false)
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
 
   const getCenterPosition = useCallback(() => {
     const bounds = reactFlowWrapper.current?.getBoundingClientRect()
@@ -103,17 +108,12 @@ function MediaCanvasInner({ onImportReady }: MediaCanvasProps) {
     getCenterPosition,
   })
 
-  useEffect(() => {
-    onImportReady(openFilePicker)
-  }, [onImportReady, openFilePicker])
-
-  const handleNodesChange = useCallback(
-    (changes: NodeChange[]) => {
-      const next = applyNodeChanges(changes, nodes)
-      onNodesChange(next as typeof nodes)
-    },
-    [nodes, onNodesChange],
-  )
+  const handleNodesChange = useCallback((changes: NodeChange[]) => {
+    // Always read latest nodes — stale closures drop marquee/multi-select updates.
+    const current = useMediaStore.getState().nodes
+    const next = applyNodeChanges(changes, current)
+    useMediaStore.getState().onNodesChange(next as typeof current)
+  }, [])
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
@@ -162,7 +162,8 @@ function MediaCanvasInner({ onImportReady }: MediaCanvasProps) {
 
   const handleNodeClick: NodeMouseHandler = useCallback(
     (event, node) => {
-      if (activeTool !== 'select') return
+      // Leave multi-select modifiers to React Flow (Control / Meta).
+      // References update the command store even when the terminal panel is closed.
       if (event.shiftKey || event.metaKey || event.ctrlKey) return
 
       const index = getReferenceIndex(node.id)
@@ -170,8 +171,67 @@ function MediaCanvasInner({ onImportReady }: MediaCanvasProps) {
 
       toggleReference(index)
     },
-    [activeTool, getReferenceIndex, toggleReference],
+    [getReferenceIndex, toggleReference],
   )
+
+  const openSelectionMenuAt = useCallback((x: number, y: number) => {
+    setContextMenu({ type: 'selection', x, y })
+  }, [])
+
+  const openCanvasContextMenu = useCallback(
+    (event: React.MouseEvent | MouseEvent) => {
+      event.preventDefault()
+      // After marquee / multi-select, right-click empty canvas still targets the selection.
+      const selectedCount = useMediaStore
+        .getState()
+        .nodes.filter((n) => n.selected).length
+      if (selectedCount > 0) {
+        openSelectionMenuAt(event.clientX, event.clientY)
+        return
+      }
+      setContextMenu({
+        type: 'canvas',
+        x: event.clientX,
+        y: event.clientY,
+      })
+    },
+    [openSelectionMenuAt],
+  )
+
+  const openSelectionContextMenu: NodeMouseHandler = useCallback(
+    (event, node) => {
+      event.preventDefault()
+
+      const current = useMediaStore.getState().nodes
+      const target = current.find((n) => n.id === node.id)
+      // If right-clicked node is not selected, select only it; otherwise keep multi-selection
+      // (including marquee / Control multi-select).
+      if (!target?.selected) {
+        useMediaStore.getState().onNodesChange(
+          current.map((n) => ({
+            ...n,
+            selected: n.id === node.id,
+          })),
+        )
+      }
+
+      openSelectionMenuAt(event.clientX, event.clientY)
+    },
+    [openSelectionMenuAt],
+  )
+
+  /** Right-click the selection bounds after marquee multi-select. */
+  const openSelectionBoxContextMenu = useCallback(
+    (event: React.MouseEvent | MouseEvent) => {
+      event.preventDefault()
+      openSelectionMenuAt(event.clientX, event.clientY)
+    },
+    [openSelectionMenuAt],
+  )
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null)
+  }, [])
 
   return (
     <div
@@ -185,25 +245,36 @@ function MediaCanvasInner({ onImportReady }: MediaCanvasProps) {
     >
       {fileInput}
 
-      <div className="absolute left-0 right-0 top-0 z-20 flex h-12 items-center justify-between border-b border-border-l1 bg-surface-base/80 px-4 backdrop-blur-sm">
-        <span className="text-sm font-medium text-fg-primary">Canvas</span>
-        <button
-          type="button"
-          onClick={openFilePicker}
-          className="flex items-center gap-2 rounded-xl border border-border-l1 px-3 py-1.5 text-xs text-fg-primary transition-colors hover:bg-button-ghost-hover"
-        >
-          <Upload className="size-3.5" />
-          Import
-        </button>
-      </div>
-
       {isDragging && (
         <div className="pointer-events-none absolute inset-0 z-30 border-2 border-dashed border-white/20 bg-white/5" />
       )}
 
       {nodes.length === 0 && <EmptyCanvas onImport={openFilePicker} />}
 
+      <ImportNotice />
+
+      <div className="pointer-events-none absolute bottom-6 left-4 z-30">
+        <div className="pointer-events-auto">
+          <SettingsMenu onImport={openFilePicker} />
+        </div>
+      </div>
+
       <BottomToolbar />
+
+      {contextMenu?.type === 'canvas' && (
+        <CanvasContextMenu
+          position={contextMenu}
+          onImport={openFilePicker}
+          onClose={closeContextMenu}
+        />
+      )}
+
+      {contextMenu?.type === 'selection' && (
+        <SelectionContextMenu
+          position={contextMenu}
+          onClose={closeContextMenu}
+        />
+      )}
 
       <ReactFlow
         className={`${canvasTheme.flowClass} !absolute inset-0`}
@@ -211,14 +282,20 @@ function MediaCanvasInner({ onImportReady }: MediaCanvasProps) {
         nodeTypes={nodeTypes}
         onNodesChange={handleNodesChange}
         onNodeClick={handleNodeClick}
+        onPaneContextMenu={openCanvasContextMenu}
+        onNodeContextMenu={openSelectionContextMenu}
+        onSelectionContextMenu={openSelectionBoxContextMenu}
         defaultViewport={defaultViewport}
         minZoom={0.1}
         maxZoom={2}
         deleteKeyCode={null}
-        panOnDrag={activeTool === 'pan'}
-        selectionOnDrag={activeTool === 'select'}
-        nodesDraggable={activeTool === 'select'}
-        elementsSelectable={activeTool === 'select'}
+        panOnDrag={[1]}
+        selectionOnDrag
+        selectionMode={SelectionMode.Partial}
+        multiSelectionKeyCode="Control"
+        nodesDraggable
+        elementsSelectable
+        selectNodesOnDrag
         proOptions={{ hideAttribution: true }}
       >
         <CanvasViewHelper />
@@ -228,7 +305,6 @@ function MediaCanvasInner({ onImportReady }: MediaCanvasProps) {
           size={1}
           color={canvasTheme.dotColor}
         />
-        <Controls showInteractive={false} position="bottom-left" />
         <MiniMap
           position="bottom-right"
           bgColor={canvasTheme.minimap.bg}

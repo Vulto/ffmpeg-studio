@@ -1,0 +1,34 @@
+TODO:
+
+IMAGE:
+	Upscale
+		provide option to upscale x2 x3 x4	
+
+	img2video:
+		We need a similar menu to the one used on the frames extraction, 
+		but for the make video function.
+		this menu has options to video generation like framerate
+	Vectorize:
+		I have no idea on how to implement it.
+
+VIDEO:
+	Join videos: straight video concatenation. 
+		look for edge cases, reencoding, resolution match.
+	interpolate:
+		have control of every aspect of the video interpolation
+	
+bug?
+	Investigate why i can't use middle click on the notebook 
+	to move the canvas like i do using regular mouse with wheel click.
+	My notebook is a thinkpad and it has 3 buttons for the mouse. left middle and right.
+	It sholud be relative to the regular mouse, but apparently not.
+UI:
+	Remove Import Media from Settings
+	Move Show terminal to the top right of the screen be sure to not conflict with the 
+	"hide terminal" button on the terminal.
+
+create a serveless version of the program to run locally, not a web interface.
+	it should have exactly the same appearance as the web version. Use raylib and raygui, but not use the default raygui appearance. 
+	as i said before, the interface should be the same as the web interface.
+	look for the web version colors and behaviour to generate this version.
+	All written in C.

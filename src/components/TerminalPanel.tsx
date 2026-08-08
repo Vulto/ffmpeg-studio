@@ -3,7 +3,6 @@ import { Terminal as XTerm } from '@xterm/xterm'
 import { Loader2, PanelRightClose, Play, Terminal, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useRef } from 'react'
 import '@xterm/xterm/css/xterm.css'
-import { checkHealth } from '../lib/api'
 import { useRunJob } from '../hooks/useRunJob'
 import { terminalThemes } from '../lib/terminalThemes'
 import { usePanelStore } from '../store/mediaStore'
@@ -35,7 +34,6 @@ export function TerminalPanel() {
     setCommand,
     setCommandSelection,
     setLogger,
-    setServerHealth,
     navigateHistory,
   } = useTerminalStore()
   const { runCommand } = useRunJob()
@@ -92,51 +90,31 @@ export function TerminalPanel() {
     term.options.theme = terminalThemes[theme]
   }, [theme])
 
+  // Print current health once when the panel opens (health is polled app-wide).
   useEffect(() => {
     if (!terminalOpen) return
-
-    let cancelled = false
-    let lastOnline: boolean | null = null
-
-    const poll = async () => {
-      try {
-        const health = await checkHealth()
-        if (cancelled) return
-        setServerHealth(true, health.ffmpeg)
-        if (lastOnline !== true) {
-          lastOnline = true
-          if (health.ffmpeg.ok && health.ffmpeg.version) {
-            loggerRef.current.writeln(`\x1b[32m●\x1b[0m ${health.ffmpeg.version}`)
-          } else {
-            loggerRef.current.writeln(
-              `\x1b[31m●\x1b[0m ${health.ffmpeg.error ?? 'ffmpeg unavailable'}`,
-            )
-          }
-          if (health.realesrgan?.ok) {
-            loggerRef.current.writeln(`\x1b[32m●\x1b[0m Real-ESRGAN ready`)
-          }
-        }
-      } catch {
-        if (!cancelled) {
-          setServerHealth(false)
-          if (lastOnline !== false) {
-            lastOnline = false
-            loggerRef.current.writeln(
-              '\x1b[31m●\x1b[0m API server offline — run `bun run dev`',
-            )
-          }
-        }
+    // Defer until xterm mount effect has run.
+    const timer = setTimeout(() => {
+      if (!xtermRef.current) return
+      const {
+        serverOnline: online,
+        ffmpegAvailable: ffmpegOk,
+        ffmpegVersion: version,
+      } = useTerminalStore.getState()
+      if (!online) {
+        loggerRef.current.writeln(
+          '\x1b[31m●\x1b[0m API server offline — run `bun run dev`',
+        )
+        return
       }
-    }
-
-    void poll()
-    const interval = setInterval(() => void poll(), 10000)
-
-    return () => {
-      cancelled = true
-      clearInterval(interval)
-    }
-  }, [terminalOpen, setServerHealth])
+      if (version) {
+        loggerRef.current.writeln(`\x1b[32m●\x1b[0m ${version}`)
+      } else if (!ffmpegOk) {
+        loggerRef.current.writeln('\x1b[31m●\x1b[0m ffmpeg unavailable')
+      }
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [terminalOpen])
 
   useEffect(() => {
     if (focusInputRequest === 0) return

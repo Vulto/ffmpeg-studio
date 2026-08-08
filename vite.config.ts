@@ -12,6 +12,9 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:4317',
         changeOrigin: true,
+        // Large video uploads can take minutes on LAN/Wi‑Fi.
+        timeout: 0,
+        proxyTimeout: 0,
       },
     },
   },

@@ -137,6 +137,22 @@ export type MediaProbeResult = {
   width: number
   height: number
   duration?: number
+  frameRate?: number
+}
+
+/** Parse ffprobe rate strings like "30/1" or "30000/1001". */
+export function parseFrameRate(rate?: string): number | undefined {
+  if (!rate || rate === '0/0' || rate === 'N/A') return undefined
+  const parts = rate.split('/')
+  if (parts.length === 2) {
+    const num = Number(parts[0])
+    const den = Number(parts[1])
+    if (!Number.isFinite(num) || !Number.isFinite(den) || den === 0) return undefined
+    const fps = num / den
+    return fps > 0 && Number.isFinite(fps) ? fps : undefined
+  }
+  const direct = Number(rate)
+  return Number.isFinite(direct) && direct > 0 ? direct : undefined
 }
 
 export async function probeMediaFile(filePath: string): Promise<MediaProbeResult | null> {
@@ -151,7 +167,7 @@ export async function probeMediaFile(filePath: string): Promise<MediaProbeResult
           '-select_streams',
           'v:0',
           '-show_entries',
-          'stream=width,height',
+          'stream=width,height,avg_frame_rate,r_frame_rate',
           '-show_entries',
           'format=duration',
           '-of',
@@ -185,7 +201,12 @@ export async function probeMediaFile(filePath: string): Promise<MediaProbeResult
 
       try {
         const parsed = JSON.parse(out) as {
-          streams?: Array<{ width?: number; height?: number }>
+          streams?: Array<{
+            width?: number
+            height?: number
+            avg_frame_rate?: string
+            r_frame_rate?: string
+          }>
           format?: { duration?: string }
         }
         const stream = parsed.streams?.[0]
@@ -196,11 +217,17 @@ export async function probeMediaFile(filePath: string): Promise<MediaProbeResult
           return
         }
 
+        const frameRate = isVideo
+          ? parseFrameRate(stream?.avg_frame_rate) ??
+            parseFrameRate(stream?.r_frame_rate)
+          : undefined
+
         resolve({
           kind: isVideo ? 'video' : 'image',
           width,
           height,
           duration: isVideo ? Number(parsed.format?.duration ?? 0) : undefined,
+          frameRate,
         })
       } catch {
         resolve(null)

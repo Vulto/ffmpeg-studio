@@ -32,7 +32,6 @@
   --button-ghost-active: #2b2b2b;
   --canvas-bg: #141414;
   --node-bg: #1e1e1e;
-  --sidebar-width-icon: 3.5rem;
   --panel-width: 24rem;
 }
 
@@ -69,6 +68,19 @@ body {
   color: var(--fg-primary);
   -webkit-font-smoothing: antialiased;
   letter-spacing: -0.1px;
+}
+
+@keyframes node-progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+.node-progress-indeterminate {
+  animation: node-progress-slide 1.2s ease-in-out infinite;
 }
 
 .react-flow.rf-dark {

@@ -1,4 +1,5 @@
 import { ImagePlus } from 'lucide-react'
+import { MAX_UPLOAD_LABEL } from '../lib/media'
 
 type EmptyCanvasProps = {
   onImport: () => void
@@ -14,7 +15,8 @@ export function EmptyCanvas({ onImport }: EmptyCanvasProps) {
         <div className="space-y-1">
           <h2 className="text-sm font-medium text-fg-primary">Drop images or videos</h2>
           <p className="text-xs text-fg-secondary">
-            Drag files onto the canvas or import from your device
+            Drag files onto the canvas or import from your device.
+            Max file size {MAX_UPLOAD_LABEL}.
           </p>
         </div>
         <button

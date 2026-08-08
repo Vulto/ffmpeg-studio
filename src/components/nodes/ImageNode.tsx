@@ -32,7 +32,10 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<MediaFlowNode>) {
             </span>
           )}
           {data.uploadError && (
-            <span className="rounded-md bg-red-500/20 px-1.5 py-0.5 text-[10px] text-red-400">
+            <span
+              className="rounded-md bg-red-500/20 px-1.5 py-0.5 text-[10px] text-red-400"
+              title={data.uploadError}
+            >
               upload failed
             </span>
           )}

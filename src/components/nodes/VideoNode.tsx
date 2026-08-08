@@ -1,6 +1,6 @@
 import { memo } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
-import { formatDuration } from '../../lib/media'
+import { formatDuration, formatFrameRate } from '../../lib/media'
 import type { MediaFlowNode } from '../../store/mediaStore'
 import { MediaNodeChrome } from './MediaNodeChrome'
 
@@ -14,9 +14,10 @@ function VideoNodeComponent({ id, data, selected }: NodeProps<MediaFlowNode>) {
     >
       <video
         src={data.blobUrl}
-        controls
+        controls={selected}
         muted
         playsInline
+        draggable={false}
         className="block w-full bg-black object-contain"
         style={{ height: data.displayHeight }}
       />
@@ -34,13 +35,24 @@ function VideoNodeComponent({ id, data, selected }: NodeProps<MediaFlowNode>) {
             </span>
           )}
           {data.uploadError && (
-            <span className="rounded-md bg-red-500/20 px-1.5 py-0.5 text-[10px] text-red-400">
+            <span
+              className="rounded-md bg-red-500/20 px-1.5 py-0.5 text-[10px] text-red-400"
+              title={data.uploadError}
+            >
               upload failed
             </span>
           )}
           {data.duration !== undefined && (
             <span className="rounded-md bg-surface-inset px-1.5 py-0.5 text-[10px] text-fg-secondary">
               {formatDuration(data.duration)}
+            </span>
+          )}
+          {data.frameRate !== undefined && data.frameRate > 0 && (
+            <span
+              className="rounded-md bg-surface-inset px-1.5 py-0.5 text-[10px] text-fg-secondary"
+              title="Frame rate"
+            >
+              {formatFrameRate(data.frameRate)}
             </span>
           )}
           <span className="rounded-md bg-surface-inset px-1.5 py-0.5 text-[10px] text-fg-secondary">
